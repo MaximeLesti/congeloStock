@@ -453,20 +453,28 @@
   }
 
   function thermalCanvas(it, f) {
-    const W = Math.round(f.w * DPMM), H = Math.round(f.h * DPMM);
-    const c = document.createElement('canvas'); c.width = W; c.height = H;
-    const g = c.getContext('2d');
-    g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
+    const W = Math.round(f.w * DPMM);
     const pad = Math.round(1.2 * DPMM);
     const compact = f.h < 20;
 
     // QR code en pixels entiers (net à l'impression)
     const qr = qrcode(0, 'M'); qr.addData(QR_PREFIX + it.id); qr.make();
     const n = qr.getModuleCount();
-    const maxSide = Math.min(H - 2 * pad, W * (compact ? 0.3 : 0.38));
+    let H, maxSide;
+    const vpad = 4; // rouleau : marge haut/bas réduite au minimum (0,5 mm)
+    if (f.roll) {
+      maxSide = W * 0.42;
+    } else {
+      H = Math.round(f.h * DPMM);
+      maxSide = Math.min(H - 2 * pad, W * (compact ? 0.3 : 0.38));
+    }
     const mod = Math.max(2, Math.floor(maxSide / n));
     const side = mod * n;
-    const qx = pad, qy = Math.round((H - side) / 2);
+    if (f.roll) H = side + 2 * vpad; // l'étiquette fait juste la hauteur du QR code
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const g = c.getContext('2d');
+    g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
+    const qx = f.roll ? vpad : pad, qy = Math.round((H - side) / 2);
     g.fillStyle = '#000';
     for (let r = 0; r < n; r++) for (let col = 0; col < n; col++)
       if (qr.isDark(r, col)) g.fillRect(qx + col * mod, qy + r * mod, mod, mod);
@@ -481,25 +489,34 @@
       if (shrink) while (s > 10 && g.measureText(text).width > tw) { s--; g.font = `${weight} ${s}px ${family}`; }
       return { text: fitText(g, text, tw), font: g.font, size: s };
     };
-    const lines = [];
-    if (compact) {
-      const ns = Math.round(H * 0.24), ms = Math.round(H * 0.19);
-      lines.push(line(it.name, 800, FONT, ns, false));
-      lines.push(line(`Avant ${fmt(it.expiresAt)}`, 800, FONT, ms, true));
-      lines.push(line(`${it.id} · cgl ${fmt(it.frozenAt)}`, 600, MONO, Math.round(ms * 0.8), true));
-    } else {
-      const ns = Math.min(34, Math.round(H * 0.15)), ms = Math.min(23, Math.round(H * 0.10));
-      g.font = `800 ${ns}px ${FONT}`;
-      wrap2(g, it.name, tw).forEach(l => lines.push({ text: l, font: g.font, size: ns }));
-      const sub = it.qty || catLabel(it);
-      if (sub) lines.push(line(sub, 500, FONT, ms, false));
-      lines.push(line(`Congelé ${fmt(it.frozenAt)}`, 500, FONT, ms, true));
-      lines.push(line(`AVANT ${fmt(it.expiresAt)}`, 800, FONT, Math.round(ms * 1.15), true));
-      lines.push(line(it.id, 700, MONO, Math.round(ms * 0.9), true));
-    }
-    const gap = Math.round(H * (compact ? 0.05 : 0.025));
-    const total = lines.reduce((s, l) => s + l.size, 0) + gap * (lines.length - 1);
-    let y = Math.max(pad * 0.6, Math.round((H - total) / 2));
+    const build = k => {
+      const lines = [];
+      if (compact) {
+        const ns = Math.round(H * 0.24 * k), ms = Math.round(H * 0.19 * k);
+        lines.push(line(it.name, 800, FONT, ns, false));
+        lines.push(line(`Avant ${fmt(it.expiresAt)}`, 800, FONT, ms, true));
+        lines.push(line(`${it.id} · cgl ${fmt(it.frozenAt)}`, 600, MONO, Math.round(ms * 0.8), true));
+      } else {
+        const ref = f.roll ? 208 : H; // tailles de référence (26 mm)
+        const ns = Math.round(Math.min(34, ref * 0.15) * k), ms = Math.round(Math.min(23, ref * 0.10) * k);
+        g.font = `800 ${ns}px ${FONT}`;
+        wrap2(g, it.name, tw).forEach(l => lines.push({ text: l, font: g.font, size: ns }));
+        const sub = it.qty || catLabel(it);
+        if (sub) lines.push(line(sub, 500, FONT, ms, false));
+        lines.push(line(`Congelé ${fmt(it.frozenAt)}`, 500, FONT, ms, true));
+        lines.push(line(`AVANT ${fmt(it.expiresAt)}`, 800, FONT, Math.round(ms * 1.15), true));
+        lines.push(line(it.id, 700, MONO, Math.round(ms * 0.9), true));
+      }
+      const gap = Math.max(2, Math.round((f.roll ? 4 : H * (compact ? 0.05 : 0.025)) * k));
+      const total = lines.reduce((s, l) => s + l.size, 0) + gap * (lines.length - 1);
+      return { lines, gap, total };
+    };
+    // le texte doit tenir dans la hauteur disponible (sur rouleau : la hauteur du QR)
+    const avail = f.roll ? side : H - 2 * Math.round(pad * 0.6);
+    let k = 1, layout = build(k);
+    while (layout.total > avail && k > 0.5) { k -= 0.04; layout = build(k); }
+    const { lines, gap, total } = layout;
+    let y = Math.max(f.roll ? vpad : pad * 0.6, Math.round((H - total) / 2));
     for (const l of lines) { g.font = l.font; g.fillText(l.text, x0, y); y += l.size + gap; }
     // Noir & blanc pur (les imprimantes thermiques n'aiment pas le gris)
     const img = g.getImageData(0, 0, W, H), d = img.data;
@@ -514,8 +531,8 @@
   // Bande continue : toutes les étiquettes l'une sous l'autre avec des pointillés de découpe
   function thermalStrip(items, f) {
     const cs = items.map(it => thermalCanvas(it, f));
-    const W = cs[0].width, sep = Math.round(4 * DPMM);
-    const H = cs.reduce((s, c) => s + c.height, 0) + sep * (cs.length - 1) + sep;
+    const W = cs[0].width, sep = Math.round(2.5 * DPMM);
+    const H = cs.reduce((s, c) => s + c.height, 0) + sep * (cs.length - 1);
     const c = document.createElement('canvas'); c.width = W; c.height = H;
     const g = c.getContext('2d');
     g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
@@ -560,7 +577,7 @@
     $('#print-btn').textContent = f.thermal ? '📤 Envoyer à l\'imprimante' : '🖨️ Imprimer';
     $('#label-preview').innerHTML = items.map(it =>
       `<div class="lbl-wrap" data-id="${it.id}">${f.thermal
-        ? `<img class="lbl lbl-img" alt="" src="${thermalCanvas(it, f).toDataURL('image/png')}" style="width:${f.w}mm;height:${f.h}mm">`
+        ? `<img class="lbl lbl-img" alt="" src="${thermalCanvas(it, f).toDataURL('image/png')}" style="width:${f.w}mm;height:${f.roll ? 'auto' : f.h + 'mm'}">`
         : labelHtml(it, f)}<button class="rm" aria-label="Retirer">×</button></div>`).join('');
     $('#labels-empty').hidden = items.length > 0;
     $('#print-btn').disabled = !items.length;
