@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Congélo">
+  <meta name="theme-color" content="#eef3f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0f1720" media="(prefers-color-scheme: dark)">
+  <title>Congélo</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css">
+  <style id="page-style"></style>
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <h1 id="title">Stock</h1>
+      <span id="topbar-extra"></span>
+    </header>
+
+    <main>
+      <!-- STOCK -->
+      <section id="view-stock" class="view active">
+        <div class="summary" id="summary"></div>
+        <div class="searchbar">
+          <input id="search" type="search" placeholder="Rechercher un produit…" autocomplete="off">
+        </div>
+        <div class="chips" id="cat-chips"></div>
+        <ul class="list" id="stock-list"></ul>
+        <div class="empty" id="stock-empty" hidden>
+          <div class="empty-icon">🧊</div>
+          <p>Le congélo est vide.</p>
+          <button class="btn primary" data-go="add">Ajouter un produit</button>
+        </div>
+      </section>
+
+      <!-- AJOUT -->
+      <section id="view-add" class="view">
+        <form id="add-form" class="card form" autocomplete="off">
+          <label>Produit
+            <input name="name" required placeholder="ex. Bolognaise maison" list="names-list" enterkeyhint="next">
+            <datalist id="names-list"></datalist>
+          </label>
+          <label>Catégorie
+            <div class="cat-grid" id="cat-grid"></div>
+            <input type="hidden" name="cat" value="plat">
+          </label>
+          <div class="row">
+            <label>Quantité / portion
+              <input name="qty" placeholder="ex. 500 g, 2 parts">
+            </label>
+            <label class="narrow">Étiquettes
+              <div class="stepper">
+                <button type="button" data-step="-1">−</button>
+                <input name="count" type="number" inputmode="numeric" min="1" max="50" value="1">
+                <button type="button" data-step="1">+</button>
+              </div>
+            </label>
+          </div>
+          <div class="row">
+            <label>Congelé le
+              <input name="frozenAt" type="date" required>
+            </label>
+            <label class="narrow">Garde (mois)
+              <input name="months" type="number" inputmode="numeric" min="1" max="36" value="3">
+            </label>
+          </div>
+          <label>Note (optionnel)
+            <input name="note" placeholder="ex. sans sel, pour 4">
+          </label>
+          <p class="hint" id="add-hint"></p>
+          <button class="btn primary big" type="submit">Créer l'étiquette</button>
+        </form>
+      </section>
+
+      <!-- SCANNER -->
+      <section id="view-scan" class="view">
+        <div class="scanner">
+          <video id="video" playsinline muted></video>
+          <div class="frame"><span></span></div>
+          <div class="scan-msg" id="scan-msg">Vise l'étiquette avec la caméra</div>
+          <button class="btn primary" id="cam-start" hidden>Activer la caméra</button>
+        </div>
+        <div class="card scan-opts">
+          <label class="switch">
+            <input type="checkbox" id="express">
+            <span>Sortie express <small>(retire sans confirmation, annulable)</small></span>
+          </label>
+        </div>
+        <div class="scan-fallback">
+          <label class="btn">📷 Photo de l'étiquette
+            <input type="file" accept="image/*" capture="environment" id="photo-input" hidden>
+          </label>
+          <form id="code-form" class="code-form">
+            <input id="code-input" placeholder="Code (ex. K7F2QX)" maxlength="6" autocapitalize="characters" autocomplete="off">
+            <button class="btn" type="submit">OK</button>
+          </form>
+        </div>
+      </section>
+
+      <!-- ETIQUETTES -->
+      <section id="view-labels" class="view">
+        <div class="card">
+          <label>Format d'impression
+            <select id="label-format"></select>
+          </label>
+          <label id="skip-wrap">Commencer à la case n°
+            <input id="label-skip" type="number" inputmode="numeric" min="1" value="1">
+          </label>
+          <p class="hint" id="format-hint"></p>
+        </div>
+        <div class="labels-head">
+          <h2><span id="queue-count">0</span> étiquette(s) à imprimer</h2>
+          <button class="link" id="queue-clear">Vider</button>
+        </div>
+        <div class="label-preview" id="label-preview"></div>
+        <div class="empty" id="labels-empty" hidden>
+          <div class="empty-icon">🏷️</div>
+          <p>Aucune étiquette en attente.<br>Elles apparaissent ici quand tu ajoutes un produit.</p>
+        </div>
+        <div class="sticky-actions">
+          <button class="btn primary big" id="print-btn">🖨️ Imprimer</button>
+        </div>
+      </section>
+
+      <!-- PLUS -->
+      <section id="view-more" class="view">
+        <h2 class="section-title">Historique des sorties</h2>
+        <ul class="list" id="history-list"></ul>
+        <p class="hint" id="history-empty" hidden>Rien n'est encore sorti du congélo.</p>
+
+        <h2 class="section-title">Sauvegarde</h2>
+        <div class="card">
+          <p class="hint">Les données sont stockées uniquement sur ce téléphone. Exporte de temps en temps une sauvegarde (dans Fichiers / iCloud Drive).</p>
+          <div class="btn-row">
+            <button class="btn" id="export-btn">⬆️ Exporter</button>
+            <label class="btn">⬇️ Importer
+              <input type="file" id="import-input" accept="application/json,.json" hidden>
+            </label>
+          </div>
+          <p class="hint" id="storage-info"></p>
+        </div>
+
+        <h2 class="section-title">Durées de garde par défaut</h2>
+        <div class="card" id="durations"></div>
+
+        <h2 class="section-title">Zone sensible</h2>
+        <div class="card">
+          <button class="btn danger" id="wipe-btn">Tout effacer</button>
+        </div>
+        <p class="hint center">Congélo · données 100 % locales</p>
+      </section>
+    </main>
+
+    <nav class="tabbar">
+      <button data-tab="stock" class="active"><span class="ico">🧊</span><span>Stock</span></button>
+      <button data-tab="add"><span class="ico">➕</span><span>Ajouter</span></button>
+      <button data-tab="scan" class="scan-tab"><span class="ico"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M4 12h16"/></svg></span><span>Scanner</span></button>
+      <button data-tab="labels"><span class="ico">🏷️</span><span>Étiquettes</span><b class="badge" id="queue-badge" hidden>0</b></button>
+      <button data-tab="more"><span class="ico">⋯</span><span>Plus</span></button>
+    </nav>
+  </div>
+
+  <!-- feuille modale -->
+  <div class="sheet-backdrop" id="sheet-backdrop" hidden>
+    <div class="sheet" id="sheet" role="dialog" aria-modal="true"></div>
+  </div>
+  <div class="toast" id="toast" hidden></div>
+
+  <!-- zone d'impression -->
+  <div id="print-area"></div>
+
+  <canvas id="scan-canvas" hidden></canvas>
+  <script src="vendor/qrcode.js"></script>
+  <script src="vendor/jsQR.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
