@@ -895,7 +895,16 @@
   if (TITLES[startTab] && startTab !== 'stock') go(startTab);
 
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
+    // Quand une nouvelle version de l'app est installée, on recharge une fois pour l'afficher tout de suite
+    const hadController = !!navigator.serviceWorker.controller;
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (hadController && !reloaded) { reloaded = true; location.reload(); }
+    });
+    navigator.serviceWorker.register('sw.js').then(reg => reg.update()).catch(() => {});
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) navigator.serviceWorker.getRegistration().then(r => r && r.update()).catch(() => {});
+    });
   }
 
   // exposé pour le débogage / tests
