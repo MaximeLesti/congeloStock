@@ -46,10 +46,7 @@
             <input name="name" required placeholder="ex. Bolognaise maison" list="names-list" enterkeyhint="next">
             <datalist id="names-list"></datalist>
           </label>
-          <label>Catégorie
-            <div class="cat-grid" id="cat-grid"></div>
-            <input type="hidden" name="cat" value="plat">
-          </label>
+          <input type="hidden" name="cat" value="autre">
           <div class="row">
             <label>Quantité / portion
               <input name="qty" placeholder="ex. 500 g, 2 parts">
@@ -112,6 +109,10 @@
           <label id="skip-wrap">Commencer à la case n°
             <input id="label-skip" type="number" inputmode="numeric" min="1" value="1">
           </label>
+          <label class="switch" id="split-wrap">
+            <input type="checkbox" id="thermal-split">
+            <span>Une image par étiquette <small>(sinon une seule bande à découper)</small></span>
+          </label>
           <p class="hint" id="format-hint"></p>
         </div>
         <div class="labels-head">
@@ -146,7 +147,7 @@
           <p class="hint" id="storage-info"></p>
         </div>
 
-        <h2 class="section-title">Durées de garde par défaut</h2>
+        <h2 class="section-title">Durée de garde par défaut</h2>
         <div class="card" id="durations"></div>
 
         <h2 class="section-title">Zone sensible</h2>

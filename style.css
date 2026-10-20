@@ -199,6 +199,8 @@ main { flex: 1; padding: 0 16px calc(var(--tabbar-h) + env(safe-area-inset-botto
 .label-preview { display: grid; grid-template-columns: 1fr; gap: 10px; margin-bottom: 14px; }
 .label-preview .lbl-wrap { position: relative; background: var(--card); border-radius: 12px; padding: 10px; }
 .label-preview .lbl { margin: 0 auto; box-shadow: 0 0 0 1px #c9d3dc; border-radius: 3px; }
+.label-preview .lbl-img { display: block; padding: 0; image-rendering: pixelated; -webkit-touch-callout: default; }
+#split-wrap { margin: 4px 0 8px; font-size: 15px; }
 .label-preview .rm {
   position: absolute; top: 4px; right: 6px; border: 0; background: none;
   color: var(--muted); font-size: 22px; line-height: 1; padding: 4px 6px;

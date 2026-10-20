@@ -18,11 +18,18 @@
     { id: 'fruits',   label: 'Fruits',     emoji: '🍓', months: 10 },
     { id: 'pain',     label: 'Pain / pâtisserie', emoji: '🥖', months: 3 },
     { id: 'dessert',  label: 'Glace / dessert', emoji: '🍨', months: 2 },
-    { id: 'autre',    label: 'Autre',      emoji: '📦', months: 6 },
+    { id: 'autre',    label: 'Autre',      emoji: '🧊', months: 3 },
   ];
   const CAT = Object.fromEntries(CATEGORIES.map(c => [c.id, c]));
 
+  const THERMAL_HINT = 'Mini imprimante thermique (Photo Creator / TinyPrint, Phomemo…) : l\'app crée une image. ' +
+    'Appuie sur « Envoyer », puis choisis l\'app de ton imprimante (ex. TinyPrint) ou « Enregistrer l\'image » et imprime-la depuis cette app. ' +
+    '⚠️ Ne choisis pas « Imprimer » dans le menu iPhone : ça passe par AirPrint en A4.';
   const FORMATS = [
+    { id: 'th-roll', name: 'Thermique · rouleau 57/58 mm', thermal: true, roll: true, w: 48, h: 26, hint: THERMAL_HINT },
+    { id: 'th-50x30', name: 'Thermique · étiquettes 50×30 mm', thermal: true, w: 50, h: 30, hint: THERMAL_HINT },
+    { id: 'th-40x30', name: 'Thermique · étiquettes 40×30 mm', thermal: true, w: 40, h: 30, hint: THERMAL_HINT },
+    { id: 'th-40x15', name: 'Thermique · ruban 12–15 mm (Niimbot, D30…)', thermal: true, w: 40, h: 14, hint: THERMAL_HINT },
     { id: 'a4-70x37', name: 'Planche A4 · 3×8 (70×37 mm)', sheet: true, page: [210, 297], cols: 3, rows: 8, w: 70, h: 37, gx: 0, gy: 0,
       hint: 'Planches autocollantes A4 « 24 étiquettes 70×37 » (Avery 3474, Herma 4453…). Imprime à 100 %, sans mise à l\'échelle.' },
     { id: 'a4-63x38', name: 'Planche A4 · 3×7 (63,5×38,1 mm)', sheet: true, page: [210, 297], cols: 3, rows: 7, w: 63.5, h: 38.1, gx: 2.5, gy: 0,
@@ -42,7 +49,7 @@
     version: 1,
     items: [],          // { id, batch, name, cat, qty, note, frozenAt, months, expiresAt, createdAt, removedAt }
     queue: [],          // ids d'étiquettes à imprimer
-    settings: { format: 'a4-70x37', express: false, durations: {} },
+    settings: { format: 'th-roll', express: false, durations: {}, thermalSplit: false },
   });
 
   let state = load();
@@ -53,7 +60,13 @@
       if (!raw) return defaultState();
       const s = JSON.parse(raw);
       const d = defaultState();
-      return { ...d, ...s, settings: { ...d.settings, ...(s.settings || {}) } };
+      const st = { ...d, ...s, settings: { ...d.settings, ...(s.settings || {}) } };
+      // Migration : l'ancienne version mettait le format A4 par défaut → passer en thermique
+      if (!st.settings.v2) {
+        if (st.settings.format === 'a4-70x37') st.settings.format = 'th-roll';
+        st.settings.v2 = true;
+      }
+      return st;
     } catch (e) {
       console.warn('Lecture impossible', e);
       return defaultState();
@@ -78,6 +91,9 @@
     }
   }
   const monthsFor = cat => +(state.settings.durations[cat] || CAT[cat]?.months || 6);
+  const defaultMonths = () => +(state.settings.defaultMonths || 3);
+  // libellé de catégorie seulement pour les anciens produits qui en ont une
+  const catLabel = it => (it.cat && it.cat !== 'autre' ? CAT[it.cat]?.label : '') || '';
 
   // ------------------------------------------------------------------
   // Dates
@@ -254,7 +270,7 @@
     const sh = openSheet(`
       <div class="big-emoji">${CAT[it.cat]?.emoji || '📦'}</div>
       <h3>${esc(it.name)}</h3>
-      <div class="hint">${esc(CAT[it.cat]?.label || '')}${it.qty ? ' · ' + esc(it.qty) : ''}</div>
+      <div class="hint">${esc([catLabel(it), it.qty].filter(Boolean).join(' · '))}</div>
       <div class="status ${due.cls || 'ok'}">${due.long}</div>
       <dl>
         <dt>Congelé le</dt><dd>${fmtLong(it.frozenAt)}</dd>
@@ -308,15 +324,11 @@
   const form = $('#add-form');
   let monthsTouched = false;
 
-  $('#cat-grid').innerHTML = CATEGORIES.map(c =>
-    `<button type="button" data-cat="${c.id}"><span>${c.emoji}</span>${esc(c.label)}</button>`).join('');
-  function setCat(cat) {
-    form.cat.value = cat;
-    $$('#cat-grid button').forEach(b => b.classList.toggle('active', b.dataset.cat === cat));
-    if (!monthsTouched) form.months.value = monthsFor(cat);
+  // (plus de choix de catégorie : tout est enregistré en « autre », la durée se règle directement)
+  function setMonths(m) {
+    if (!monthsTouched) form.months.value = m || defaultMonths();
     updateHint();
   }
-  $('#cat-grid').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setCat(b.dataset.cat); });
   form.months.addEventListener('input', () => { monthsTouched = true; updateHint(); });
   form.frozenAt.addEventListener('input', updateHint);
   form.count.addEventListener('input', updateHint);
@@ -324,9 +336,9 @@
     form.count.value = Math.max(1, Math.min(50, (+form.count.value || 1) + +b.dataset.step)); updateHint();
   }));
   form.name.addEventListener('change', () => {
-    // si le nom correspond à un produit déjà connu, on reprend sa catégorie
+    // si le nom correspond à un produit déjà connu, on reprend sa durée et sa quantité
     const prev = [...state.items].reverse().find(i => i.name.toLowerCase() === form.name.value.trim().toLowerCase());
-    if (prev) { setCat(prev.cat); if (prev.qty && !form.qty.value) form.qty.value = prev.qty; }
+    if (prev) { setMonths(prev.months); if (prev.qty && !form.qty.value) form.qty.value = prev.qty; }
   });
 
   function updateHint() {
@@ -339,8 +351,8 @@
 
   function prepareAddForm() {
     if (!form.frozenAt.value) form.frozenAt.value = today();
-    if (!form.cat.value) form.cat.value = 'plat';
-    setCat(form.cat.value);
+    form.cat.value = 'autre';
+    setMonths();
     const names = [...new Set(state.items.map(i => i.name))].sort((a, b) => a.localeCompare(b));
     $('#names-list').innerHTML = names.map(n => `<option value="${esc(n)}">`).join('');
   }
@@ -348,7 +360,8 @@
     form.reset(); monthsTouched = false;
     form.name.value = it.name; form.qty.value = it.qty || ''; form.note.value = it.note || '';
     form.frozenAt.value = today(); form.count.value = 1;
-    setCat(it.cat);
+    form.cat.value = 'autre';
+    setMonths(it.months);
   }
 
   form.addEventListener('submit', e => {
@@ -371,7 +384,7 @@
     enqueue(ids);
     save();
     form.reset(); monthsTouched = false; form.count.value = 1;
-    form.frozenAt.value = today(); form.cat.value = 'plat';
+    form.frozenAt.value = today(); form.cat.value = 'autre';
     toast(`${count} étiquette${count > 1 ? 's' : ''} créée${count > 1 ? 's' : ''} — ${name}`);
     go('labels');
   });
@@ -404,17 +417,135 @@
     const base = f.h; // tailles de police proportionnelles à la hauteur
     const nameSize = Math.min(base * 0.115, 4.6);
     const metaSize = Math.min(base * 0.075, 2.9);
-    const emoji = CAT[it.cat]?.emoji || '';
     return `<div class="lbl" style="width:${f.w}mm;height:${f.h}mm;${f.cut ? 'outline:0.2mm dashed #999;outline-offset:-0.1mm;' : ''}">
       ${qrSvg(QR_PREFIX + it.id, qrMm.toFixed(2))}
       <div class="txt">
         <div class="l-name" style="font-size:${nameSize.toFixed(2)}mm">${esc(it.name)}</div>
-        <div class="l-meta" style="font-size:${metaSize.toFixed(2)}mm">${emoji} ${esc(it.qty || CAT[it.cat]?.label || '')}</div>
+        <div class="l-meta" style="font-size:${metaSize.toFixed(2)}mm">${esc(it.qty || catLabel(it))}</div>
         <div class="l-meta" style="font-size:${metaSize.toFixed(2)}mm">Congelé ${fmt(it.frozenAt)}</div>
         <div class="l-meta l-due" style="font-size:${metaSize.toFixed(2)}mm">Avant ${fmt(it.expiresAt)}</div>
         <div class="l-code" style="font-size:${(metaSize * 0.9).toFixed(2)}mm">${it.id}</div>
       </div>
     </div>`;
+  }
+
+  // ---- Rendu image pour imprimante thermique (8 points/mm = 203 dpi) ----
+  const DPMM = 8;
+  const FONT = '-apple-system, "Helvetica Neue", Helvetica, Arial, sans-serif';
+  const MONO = 'ui-monospace, Menlo, "Courier New", monospace';
+
+  function fitText(ctx, text, maxW) {
+    if (ctx.measureText(text).width <= maxW) return text;
+    let s = text;
+    while (s.length > 1 && ctx.measureText(s + '…').width > maxW) s = s.slice(0, -1);
+    return s.trimEnd() + '…';
+  }
+  function wrap2(ctx, text, maxW) {
+    const words = text.split(/\s+/); let line = '';
+    for (let i = 0; i < words.length; i++) {
+      const t = line ? line + ' ' + words[i] : words[i];
+      if (ctx.measureText(t).width > maxW && line) {
+        return [line, fitText(ctx, words.slice(i).join(' '), maxW)];
+      }
+      line = t;
+    }
+    return [fitText(ctx, line, maxW)];
+  }
+
+  function thermalCanvas(it, f) {
+    const W = Math.round(f.w * DPMM), H = Math.round(f.h * DPMM);
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const g = c.getContext('2d');
+    g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
+    const pad = Math.round(1.2 * DPMM);
+    const compact = f.h < 20;
+
+    // QR code en pixels entiers (net à l'impression)
+    const qr = qrcode(0, 'M'); qr.addData(QR_PREFIX + it.id); qr.make();
+    const n = qr.getModuleCount();
+    const maxSide = Math.min(H - 2 * pad, W * (compact ? 0.3 : 0.38));
+    const mod = Math.max(2, Math.floor(maxSide / n));
+    const side = mod * n;
+    const qx = pad, qy = Math.round((H - side) / 2);
+    g.fillStyle = '#000';
+    for (let r = 0; r < n; r++) for (let col = 0; col < n; col++)
+      if (qr.isDark(r, col)) g.fillRect(qx + col * mod, qy + r * mod, mod, mod);
+
+    // Texte
+    const x0 = qx + side + Math.round(1.6 * DPMM), tw = W - x0 - pad;
+    g.textBaseline = 'top';
+    // une ligne = texte + graisse + famille + taille ; les dates rétrécissent au lieu d'être coupées
+    const line = (text, weight, family, size, shrink) => {
+      let s = size;
+      g.font = `${weight} ${s}px ${family}`;
+      if (shrink) while (s > 10 && g.measureText(text).width > tw) { s--; g.font = `${weight} ${s}px ${family}`; }
+      return { text: fitText(g, text, tw), font: g.font, size: s };
+    };
+    const lines = [];
+    if (compact) {
+      const ns = Math.round(H * 0.24), ms = Math.round(H * 0.19);
+      lines.push(line(it.name, 800, FONT, ns, false));
+      lines.push(line(`Avant ${fmt(it.expiresAt)}`, 800, FONT, ms, true));
+      lines.push(line(`${it.id} · cgl ${fmt(it.frozenAt)}`, 600, MONO, Math.round(ms * 0.8), true));
+    } else {
+      const ns = Math.min(34, Math.round(H * 0.15)), ms = Math.min(23, Math.round(H * 0.10));
+      g.font = `800 ${ns}px ${FONT}`;
+      wrap2(g, it.name, tw).forEach(l => lines.push({ text: l, font: g.font, size: ns }));
+      const sub = it.qty || catLabel(it);
+      if (sub) lines.push(line(sub, 500, FONT, ms, false));
+      lines.push(line(`Congelé ${fmt(it.frozenAt)}`, 500, FONT, ms, true));
+      lines.push(line(`AVANT ${fmt(it.expiresAt)}`, 800, FONT, Math.round(ms * 1.15), true));
+      lines.push(line(it.id, 700, MONO, Math.round(ms * 0.9), true));
+    }
+    const gap = Math.round(H * (compact ? 0.05 : 0.025));
+    const total = lines.reduce((s, l) => s + l.size, 0) + gap * (lines.length - 1);
+    let y = Math.max(pad * 0.6, Math.round((H - total) / 2));
+    for (const l of lines) { g.font = l.font; g.fillText(l.text, x0, y); y += l.size + gap; }
+    // Noir & blanc pur (les imprimantes thermiques n'aiment pas le gris)
+    const img = g.getImageData(0, 0, W, H), d = img.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const v = (d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11) < 150 ? 0 : 255;
+      d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255;
+    }
+    g.putImageData(img, 0, 0);
+    return c;
+  }
+
+  // Bande continue : toutes les étiquettes l'une sous l'autre avec des pointillés de découpe
+  function thermalStrip(items, f) {
+    const cs = items.map(it => thermalCanvas(it, f));
+    const W = cs[0].width, sep = Math.round(4 * DPMM);
+    const H = cs.reduce((s, c) => s + c.height, 0) + sep * (cs.length - 1) + sep;
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const g = c.getContext('2d');
+    g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
+    let y = 0;
+    cs.forEach((ci, k) => {
+      g.drawImage(ci, 0, y); y += ci.height;
+      if (k < cs.length - 1) {
+        g.fillStyle = '#000';
+        for (let x = 0; x < W; x += 16) g.fillRect(x, y + sep / 2 - 1, 8, 2); // ✂︎ ligne de découpe
+      }
+      y += sep;
+    });
+    return c;
+  }
+
+  function dataUrlToFile(url, name) {
+    const bin = atob(url.split(',')[1]); const u8 = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+    return new File([u8], name, { type: 'image/png' });
+  }
+
+  function thermalFiles() {
+    const f = currentFormat();
+    const items = state.queue.map(byId).filter(Boolean);
+    if (!items.length) return [];
+    const stamp = today();
+    if (f.roll && !state.settings.thermalSplit) {
+      return [dataUrlToFile(thermalStrip(items, f).toDataURL('image/png'), `etiquettes-congelo-${stamp}.png`)];
+    }
+    return items.map(it => dataUrlToFile(thermalCanvas(it, f).toDataURL('image/png'), `etiquette-${it.id}.png`));
   }
 
   function renderLabels() {
@@ -424,9 +555,13 @@
     $('#queue-count').textContent = items.length;
     $('#format-hint').textContent = f.hint;
     $('#skip-wrap').hidden = !f.sheet || f.cut;
+    $('#split-wrap').hidden = !(f.thermal && f.roll);
     $('#label-skip').max = f.sheet ? f.cols * f.rows : 1;
+    $('#print-btn').textContent = f.thermal ? '📤 Envoyer à l\'imprimante' : '🖨️ Imprimer';
     $('#label-preview').innerHTML = items.map(it =>
-      `<div class="lbl-wrap" data-id="${it.id}">${labelHtml(it, f)}<button class="rm" aria-label="Retirer">×</button></div>`).join('');
+      `<div class="lbl-wrap" data-id="${it.id}">${f.thermal
+        ? `<img class="lbl lbl-img" alt="" src="${thermalCanvas(it, f).toDataURL('image/png')}" style="width:${f.w}mm;height:${f.h}mm">`
+        : labelHtml(it, f)}<button class="rm" aria-label="Retirer">×</button></div>`).join('');
     $('#labels-empty').hidden = items.length > 0;
     $('#print-btn').disabled = !items.length;
     $('#print-btn').parentElement.hidden = !items.length;
@@ -468,14 +603,45 @@
     area.innerHTML = html;
   }
 
-  $('#print-btn').addEventListener('click', () => {
+  $('#thermal-split').checked = !!state.settings.thermalSplit;
+  $('#thermal-split').addEventListener('change', e => { state.settings.thermalSplit = e.target.checked; save(); });
+
+  async function sendThermal() {
+    const files = thermalFiles(); // synchrone : garde le « geste utilisateur » exigé par iOS
+    if (navigator.canShare && navigator.canShare({ files })) {
+      try { await navigator.share({ files }); }
+      catch (e) { if (e.name === 'AbortError') return false; throw e; }
+      return true;
+    }
+    // ordinateur / navigateur sans partage : téléchargement
+    files.forEach((file, k) => setTimeout(() => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(file); a.download = file.name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+    }, k * 250));
+    return true;
+  }
+
+  $('#print-btn').addEventListener('click', async () => {
     if (!state.queue.length) return;
-    buildPrint();
     const printed = state.queue.length;
+    const f = currentFormat();
+    if (f.thermal) {
+      let ok = false;
+      try { ok = await sendThermal(); } catch (e) { toast('Partage impossible — appuie longuement sur une étiquette pour l\'enregistrer'); }
+      if (ok) askClearQueue(printed);
+      return;
+    }
+    buildPrint();
     setTimeout(() => {
       window.print();
       // après la fenêtre d'impression : proposer de vider la file
-      setTimeout(() => {
+      setTimeout(() => askClearQueue(printed), 400);
+    }, 50);
+  });
+
+  function askClearQueue(printed) {
         const sh = openSheet(`
           <h3>Impression terminée ?</h3>
           <p class="hint">Si les ${printed} étiquette(s) sont bien sorties, on vide la file. Sinon garde-les pour réessayer.</p>
@@ -488,9 +654,7 @@
           if (b.dataset.a === 'done') { state.queue = []; $('#label-skip').value = 1; save(); render(); }
           closeSheet();
         };
-      }, 400);
-    }, 50);
-  });
+  }
 
   // ---------------- Scanner ----------------
   const video = $('#video');
@@ -606,7 +770,7 @@
     const left = inStock().filter(i => (i.batch || i.id) === (it.batch || it.id)).length;
     openSheet(`<div class="big-emoji">${CAT[it.cat]?.emoji || '📦'}</div>
       <h3>${esc(it.name)}</h3>
-      <div class="hint">${esc(it.qty || CAT[it.cat]?.label || '')} · code ${it.id}</div>
+      <div class="hint">${esc([it.qty || catLabel(it), 'code ' + it.id].filter(Boolean).join(' · '))}</div>
       <div class="status ${due.cls || 'ok'}">${due.long}</div>
       <dl>
         <dt>Congelé le</dt><dd>${fmtLong(it.frozenAt)}</dd>
@@ -666,9 +830,9 @@
       </li>`).join('');
     $('#history-empty').hidden = out.length > 0;
 
-    $('#durations').innerHTML = CATEGORIES.map(c => `
-      <div class="dur-row"><span>${c.emoji} ${esc(c.label)}</span>
-      <input type="number" inputmode="numeric" min="1" max="36" data-cat="${c.id}" value="${monthsFor(c.id)}"> mois</div>`).join('');
+    $('#durations').innerHTML = `
+      <div class="dur-row"><span>Durée proposée pour un nouveau produit</span>
+      <input type="number" inputmode="numeric" min="1" max="36" id="default-months" value="${defaultMonths()}"> mois</div>`;
 
     const total = state.items.length;
     $('#storage-info').textContent = `${total} étiquette(s) enregistrée(s) au total, dont ${inStock().length} en stock.`;
@@ -679,8 +843,8 @@
     restoreItem(b.closest('li').dataset.id);
   });
   $('#durations').addEventListener('change', e => {
-    const inp = e.target.closest('input[data-cat]'); if (!inp) return;
-    state.settings.durations[inp.dataset.cat] = Math.max(1, +inp.value || 1); save();
+    const inp = e.target.closest('#default-months'); if (!inp) return;
+    state.settings.defaultMonths = Math.max(1, Math.min(36, +inp.value || 3)); save();
   });
 
   $('#export-btn').addEventListener('click', async () => {

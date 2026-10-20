@@ -1,5 +1,5 @@
 // Cache hors-ligne de l'application (aucune donnée ne part sur internet).
-const CACHE = 'congelo-v1';
+const CACHE = 'congelo-v4';
 const FILES = ['./', './index.html', './style.css', './app.js', './manifest.json',
   './vendor/qrcode.js', './vendor/jsQR.js', './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png'];
 
